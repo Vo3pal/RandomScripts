@@ -1,0 +1,68 @@
+local ChunkLoader = {}
+ChunkLoader.Chunk = nil -- The chunk model
+ChunkLoader.Radius = 50 -- The desired radius
+ChunkLoader.LagFilter = nil -- Function to filter objects
+ChunkLoader.ReloadDelay = 1 -- Delay for periodic checks (in seconds)
+ChunkLoader.DeletedParts = {} -- Table to store deleted parts
+
+local function isPlayer(obj)
+    return obj:IsA("Player")
+end
+
+local function isTerrain(obj)
+    return obj:IsA("Terrain")
+end
+
+local function isBaseplate(obj)
+    return obj:IsA("Baseplate")
+end
+
+local function checkParts()
+    for _, obj in pairs(workspace:GetChildren()) do
+        if not isPlayer(obj) and not isTerrain(obj) and not isBaseplate(obj) then
+            local primaryPart = obj:IsA("BasePart") and obj or obj:FindFirstChild("HumanoidRootPart")
+            if primaryPart and ChunkLoader.Chunk then
+                local distance = (primaryPart.Position - ChunkLoader.Chunk.PrimaryPart.Position).Magnitude
+                if distance <= ChunkLoader.Radius then
+                    print(obj.Name .. " entered the chunk radius.")
+                    
+                    -- Check if this part was previously deleted
+                    if ChunkLoader.DeletedParts[obj] then
+                        obj.Parent = ChunkLoader.Chunk -- Restore the part
+                        ChunkLoader.DeletedParts[obj] = nil -- Remove it from the tracking table
+                    end
+                else
+                    -- Store the deleted object if it's outside the radius and not terrain or baseplate
+                    if not ChunkLoader.DeletedParts[obj] and obj.Parent == ChunkLoader.Chunk then
+                        ChunkLoader.DeletedParts[obj] = true
+                        obj.Parent = nil -- Remove the part from the workspace
+                    end
+                end
+            end
+        end
+    end
+end
+
+function ChunkLoader.Initialize(player, options)
+    options = options or {}
+    ChunkLoader.Radius = options.Radius or ChunkLoader.Radius
+    ChunkLoader.LagFilter = options.LagFilter or ChunkLoader.LagFilter
+    ChunkLoader.ReloadDelay = options.ReloadDelay or ChunkLoader.ReloadDelay
+
+    -- Create the chunk model around the player
+    ChunkLoader.Chunk = Instance.new("Model")
+    ChunkLoader.Chunk.Name = "Chunk"
+    ChunkLoader.Chunk.Parent = workspace
+
+    local primaryPart = player:WaitForChild("HumanoidRootPart")
+    ChunkLoader.Chunk.PrimaryPart = primaryPart
+    ChunkLoader.Chunk:SetPrimaryPartCFrame(primaryPart.CFrame)
+
+    -- Timer to periodically check for parts in the radius (adjust the interval as needed)
+    while true do
+        checkParts()
+        wait(ChunkLoader.ReloadDelay)
+    end
+end
+
+return ChunkLoader
