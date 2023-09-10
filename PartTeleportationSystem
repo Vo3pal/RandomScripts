@@ -1,0 +1,84 @@
+-- Define the Teleportation Pad
+local pad = script.Parent
+
+-- Define teleportation destinations (you can add more destinations)
+local destinations = {
+    {Name = "Destination 1", Position = Vector3.new(10, 5, 10)},
+    {Name = "Destination 2", Position = Vector3.new(-15, 5, 20)},
+}
+
+-- Define a dictionary to store teleportation cooldowns for players
+local teleportCooldowns = {}
+
+-- Define a dictionary to store teleportation effects (e.g., particles, sounds)
+local teleportEffects = {}
+
+-- Function to teleport a player to a destination
+local function teleportPlayer(player, destination)
+    if player and player.Parent then
+        local character = player.Character
+        if character then
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart then
+                -- Check if the player is on cooldown
+                if teleportCooldowns[player.UserId] and
+                   tick() - teleportCooldowns[player.UserId] < 10 then
+                    -- Player is on cooldown, display a message or effect
+                    return
+                end
+                
+                -- Teleport the player
+                humanoidRootPart.CFrame = CFrame.new(destination.Position)
+                
+                -- Set a cooldown for the player
+                teleportCooldowns[player.UserId] = tick()
+                
+                -- Play teleportation effect (customize as needed)
+                if teleportEffects[player.UserId] then
+                    teleportEffects[player.UserId]:Play()
+                end
+            end
+        end
+    end
+end
+
+-- Function to handle player touch events
+local function onPadTouched(otherPart)
+    local character = otherPart.Parent
+    local player = game.Players:GetPlayerFromCharacter(character)
+
+    if player then
+        -- Display a GUI to choose a destination
+        local playerGui = player:WaitForChild("PlayerGui")
+        local destinationGui = Instance.new("ScreenGui")
+        destinationGui.Parent = playerGui
+
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0.3, 0, 0.3, 0)
+        frame.Position = UDim2.new(0.35, 0, 0.35, 0)
+        frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+        frame.Parent = destinationGui
+
+        local label = Instance.new("TextLabel")
+        label.Text = "Choose a destination:"
+        label.Size = UDim2.new(1, 0, 0.2, 0)
+        label.Parent = frame
+
+        -- Create buttons for each destination
+        for _, dest in pairs(destinations) do
+            local button = Instance.new("TextButton")
+            button.Text = dest.Name
+            button.Size = UDim2.new(1, 0, 0.2, 0)
+            button.Parent = frame
+
+            -- Teleport the player when a button is clicked
+            button.MouseButton1Click:Connect(function()
+                teleportPlayer(player, dest)
+                destinationGui:Destroy()
+            end)
+        end
+    end
+end
+
+-- Connect the touch event
+pad.Touched:Connect(onPadTouched)
