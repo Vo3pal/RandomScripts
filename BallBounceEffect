@@ -1,0 +1,39 @@
+-- Configuration
+local ballSize = 5
+local ballSpeed = 15
+local gravity = -0.5
+local floorY = 0
+
+-- Create the ball
+local ball = Instance.new("Part")
+ball.Size = Vector3.new(ballSize, ballSize, ballSize)
+ball.BrickColor = BrickColor.new("Bright red")
+ball.Anchored = false
+ball.CanCollide = true
+ball.Position = Vector3.new(0, 10, 0) -- Initial position
+ball.Velocity = Vector3.new(0, ballSpeed, 0)
+
+-- Function to handle bouncing
+local function bounce()
+    while true do
+        if ball.Position.Y <= floorY + ballSize / 2 then
+            ball.Velocity = Vector3.new(ball.Velocity.X, ballSpeed, ball.Velocity.Z)
+        end
+        ball.Velocity = ball.Velocity + Vector3.new(0, gravity, 0)
+        wait(0.03)
+    end
+end
+
+-- Function to handle player clicks
+local function onPlayerClick()
+    ball.Velocity = Vector3.new(math.random(-10, 10), ballSpeed, math.random(-10, 10))
+end
+
+-- Connect the click event
+ball.Touched:Connect(onPlayerClick)
+
+-- Insert the ball into the game
+ball.Parent = game.Workspace
+
+-- Start the bouncing loop
+bounce()
