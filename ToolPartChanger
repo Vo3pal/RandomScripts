@@ -1,0 +1,53 @@
+-- Define a function to change the color of a part when clicked
+local function changeColorOnClick(part)
+    local currentColor = part.BrickColor
+    local newColor = BrickColor.Random() -- Change to a random color
+
+    part.BrickColor = newColor
+
+    -- Add a debounce to prevent rapid color changes
+    local debounce = false
+
+    part.Touched:Connect(function(otherPart)
+        if debounce or not otherPart.Parent then
+            return
+        end
+
+        debounce = true
+
+        if otherPart.Parent:FindFirstChild("Humanoid") then
+            changeColorOnClick(part)
+        end
+
+        wait(1) -- Wait to prevent rapid color changes
+        debounce = false
+    end)
+end
+
+-- Create a custom tool
+local tool = Instance.new("Tool")
+tool.RequiresHandle = true
+
+-- Define what happens when the tool is activated
+tool.Activated:Connect(function()
+    local character = tool.Parent
+    if not character or not character:FindFirstChild("Humanoid") then
+        return
+    end
+
+    local mouse = game.Players:GetPlayerFromCharacter(character).Mouse
+    local target = mouse.Target
+
+    if target and target.Parent and target.Parent:IsA("BasePart") then
+        changeColorOnClick(target.Parent)
+    end
+end)
+
+-- Add the tool to a player's backpack
+game.Players.PlayerAdded:Connect(function(player)
+    local backpack = player:WaitForChild("Backpack")
+    local toolClone = tool:Clone()
+    toolClone.Parent = backpack
+end)
+
+print("Custom color-changing tool script loaded!")
