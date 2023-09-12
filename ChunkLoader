@@ -1,68 +1,267 @@
-local ChunkLoader = {}
-ChunkLoader.Chunk = nil -- The chunk model
-ChunkLoader.Radius = 50 -- The desired radius
-ChunkLoader.LagFilter = nil -- Function to filter objects
-ChunkLoader.ReloadDelay = 1 -- Delay for periodic checks (in seconds)
-ChunkLoader.DeletedParts = {} -- Table to store deleted parts
+-- This is a chunk loader!
 
-local function isPlayer(obj)
-    return obj:IsA("Player")
+
+-- Define a function to create chunks
+local function create(pos, size, parent)
+	local c = Instance.new("Part")
+	c.Size = size
+	c.Position = pos
+	c.Anchored = true
+	c.CanCollide = false
+	c.Transparency = 1 
+
+	-- Generate a unique name for the chunk based on its position
+	local cName = string.format("Chunk_%d_%d_%d", pos.X, pos.Y, pos.Z)
+	c.Name = cName
+
+	c.Parent = parent
+	return c
 end
 
-local function isTerrain(obj)
-    return obj:IsA("Terrain")
+-- Define a function to notify a player when they enter a new chunk
+local function notify(player, chunk)
+	print(player.Name .. " entered a new chunk: " .. chunk.Name)
 end
 
-local function isBaseplate(obj)
-    return obj:IsA("Baseplate")
+-- Get the local player, their character, and the humanoid in the character
+local p = game.Players.LocalPlayer
+local char = p.Character or p.CharacterAdded:Wait()
+local h = char:WaitForChild("Humanoid")
+
+local gridSize = 14 -- x,y Example 14 down/up 14 right/left
+local chunkSize = Vector3.new(35, 35, 35)
+
+local center = h.Parent:WaitForChild("HumanoidRootPart").Position
+local offset = (gridSize - 1) * chunkSize.X / 2
+
+local current = nil 
+
+-- Create a folder in the workspace to store chunks
+local folder = Instance.new("Folder")
+folder.Name = "ChunkFolder"
+folder.Parent = workspace
+
+-- Define a function to check if an object is a MeshPart
+local function w(obj)
+	return obj:IsA("UnionOperation")
 end
 
-local function checkParts()
-    for _, obj in pairs(workspace:GetChildren()) do
-        if not isPlayer(obj) and not isTerrain(obj) and not isBaseplate(obj) then
-            local primaryPart = obj:IsA("BasePart") and obj or obj:FindFirstChild("HumanoidRootPart")
-            if primaryPart and ChunkLoader.Chunk then
-                local distance = (primaryPart.Position - ChunkLoader.Chunk.PrimaryPart.Position).Magnitude
-                if distance <= ChunkLoader.Radius then
-                    print(obj.Name .. " entered the chunk radius.")
-                    
-                    -- Check if this part was previously deleted
-                    if ChunkLoader.DeletedParts[obj] then
-                        obj.Parent = ChunkLoader.Chunk -- Restore the part
-                        ChunkLoader.DeletedParts[obj] = nil -- Remove it from the tracking table
-                    end
-                else
-                    -- Store the deleted object if it's outside the radius and not terrain or baseplate
-                    if not ChunkLoader.DeletedParts[obj] and obj.Parent == ChunkLoader.Chunk then
-                        ChunkLoader.DeletedParts[obj] = true
-                        obj.Parent = nil -- Remove the part from the workspace
-                    end
-                end
-            end
-        end
-    end
+-- Create a table to store deleted objects
+local deleted = {} 
+
+-- Set the render distance for chunks
+local renderDistance = 1000
+local prelsoadDistance = 200 -- Distance to preload chunks
+local loadedChunks = {} -- Store loaded chunks
+local fadedObjects = {} -- Store objects that should fade in/out
+
+-- Initialize the last update time and update interval
+local lastUpdateTime = tick()
+local updateInterval = 0.1
+
+-- Define a function to remove objects from chunks
+local function deunion()
+	local pos = h.Parent.HumanoidRootPart.Position
+	local deletionRadius = 100
+
+	-- Loop through chunks in the folder
+	for _, c in pairs(folder:GetChildren()) do
+		if c:IsA("Part") and c ~= current then
+			local dist = (c.Position - pos).Magnitude
+
+			-- Check if the chunk is within the deletion radius
+			if dist <= deletionRadius then
+				local region = Region3.new(c.Position - c.Size / 2, c.Position + c.Size / 2)
+
+				-- Loop through objects in the chunk's region
+				for _, obj in pairs(workspace:FindPartsInRegion3(region, nil, math.huge)) do
+					if w(obj) and obj.Name ~= "Baseplate" and obj.Parent ~= p.Character and (obj.Position - pos).Magnitude > c.Size.Magnitude / 2 then
+						local uName = obj
+						local pParent = obj.Parent 
+
+						-- Handle objects within models
+						if pParent ~= nil and pParent:IsA("Model") then
+							for _, d in pairs(pParent:GetDescendants()) do
+								if w(d) and d.Parent ~= p.Character then
+									local dist = (d.Position - c.Position).Magnitude
+									if dist > c.Size.Magnitude / 2 then
+										d.Parent = nil
+										deleted[d] = { Name = d, Parent = pParent }
+									end
+								end
+							end
+						else
+							obj.Parent = nil
+							deleted[obj] = { Name = uName, Parent = pParent }
+						end
+					end
+				end
+			end
+		end
+	end
 end
 
-function ChunkLoader.Initialize(player, options)
-    options = options or {}
-    ChunkLoader.Radius = options.Radius or ChunkLoader.Radius
-    ChunkLoader.LagFilter = options.LagFilter or ChunkLoader.LagFilter
-    ChunkLoader.ReloadDelay = options.ReloadDelay or ChunkLoader.ReloadDelay
+-- Define a function to reunite objects when a player enters a new chunk
+local function reunion()
+	local pos = h.Parent.HumanoidRootPart.Position
 
-    -- Create the chunk model around the player
-    ChunkLoader.Chunk = Instance.new("Model")
-    ChunkLoader.Chunk.Name = "Chunk"
-    ChunkLoader.Chunk.Parent = workspace
-
-    local primaryPart = player:WaitForChild("HumanoidRootPart")
-    ChunkLoader.Chunk.PrimaryPart = primaryPart
-    ChunkLoader.Chunk:SetPrimaryPartCFrame(primaryPart.CFrame)
-
-    -- Timer to periodically check for parts in the radius (adjust the interval as needed)
-    while true do
-        checkParts()
-        wait(ChunkLoader.ReloadDelay)
-    end
+	-- Loop through deleted objects
+	for i, uData in pairs(deleted) do
+		local uName = uData.Name
+		local pParent = uData.Parent
+		local u = uName
+		if u then
+			local c = current
+			local dist = (u.Position - c.Position).Magnitude
+			if dist <= c.Size.Magnitude / 2 then
+				u.Parent = pParent 
+				deleted[u] = nil
+			end
+		end
+	end
 end
 
-return ChunkLoader
+-- Define a function to find the closest chunk to the player
+local function cech()
+	local closest = nil
+	local closestDist = math.huge
+
+	-- Loop through chunks in the folder
+	for _, c in pairs(folder:GetChildren()) do
+		if c:IsA("Part") then
+			local dist = (h.Parent.HumanoidRootPart.Position - c.Position).Magnitude
+			if dist < closestDist then
+				closest = c
+				closestDist = dist
+			end
+		end
+	end
+
+	-- Check if the closest chunk has changed
+	if current ~= closest then
+		current = closest
+		notify(p, current)
+		deunion()
+		reunion()
+	end
+end
+
+-- Define a function to preload chunks
+local function preloadChunks()
+	local pos = h.Parent.HumanoidRootPart.Position
+
+	-- Loop through chunks in the folder
+	for _, chunk in pairs(folder:GetChildren()) do
+		if chunk:IsA("Part") then
+			local dist = (pos - chunk.Position).Magnitude
+
+			-- Check if the chunk is within the preload distance
+			if dist < preloadDistance then
+				if not loadedChunks[chunk] then
+					-- Load objects within the chunk for preloading
+					for _, obj in pairs(chunk:GetChildren()) do
+						if obj:IsA("Model") then
+							-- Example: Load all MeshParts within the Model
+							for _, part in pairs(obj:GetDescendants()) do
+								if w(obj) then
+									part.Parent = workspace
+								end
+							end
+						elseif w(obj) then
+							-- Example: Load individual MeshParts
+							obj.Parent = workspace
+						end
+					end
+					loadedChunks[chunk] = true
+				end
+			else
+				-- Unload preloaded chunks that are out of range
+				if loadedChunks[chunk] then
+					-- Unload objects within the chunk
+					for _, obj in pairs(chunk:GetChildren()) do
+						if obj:IsA("Model") then
+							-- Example: Unload all MeshParts within the Model
+							for _, part in pairs(obj:GetDescendants()) do
+								if w(obj) then
+									part.Parent = nil
+								end
+							end
+						elseif w(obj) then
+							-- Example: Unload individual MeshParts
+							obj.Parent = nil
+						end
+					end
+					loadedChunks[chunk] = nil
+				end
+			end
+		end
+	end
+end
+
+-- Define a function to apply Level of Detail (LOD) and object fading
+local function applyLODAndFade()
+	local pos = h.Parent.HumanoidRootPart.Position
+
+	-- Loop through chunks in the folder
+	for _, chunk in pairs(folder:GetChildren()) do
+		if chunk:IsA("Part") then
+			local dist = (pos - chunk.Position).Magnitude
+
+			-- Check if the chunk is within the render distance
+			if dist < renderDistance then
+				-- LOD logic here
+				-- Object fading logic here
+				for _, obj in pairs(chunk:GetChildren()) do
+					if obj:IsA("Model") then
+						for _, part in pairs(obj:GetDescendants()) do
+							if w(obj) then
+								-- Example: Apply LOD and object fading here
+								local distanceToPlayer = (part.Position - pos).Magnitude
+								if distanceToPlayer > 50 then
+									part.Transparency = 0.5 -- Example: Fade out distant objects
+								else
+									part.Transparency = 0
+								end
+							end
+						end
+					end
+				end
+			else
+				-- Hide objects outside the render distance
+				for _, obj in pairs(chunk:GetChildren()) do
+					if obj:IsA("Model") then
+						for _, part in pairs(obj:GetDescendants()) do
+							if w(obj) then
+								part.Transparency = 1 -- Hide objects outside render distance
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+-- Creates Grid
+for i = 1, gridSize do
+	for j = 1, gridSize do
+		local xOffset = (i - 1) * chunkSize.X - offset
+		local zOffset = (j - 1) * chunkSize.Z - offset
+		local pos = center + Vector3.new(xOffset, 0, zOffset)
+		local chunk = create(pos, chunkSize, folder)
+	end
+end
+-- Throttled Update Loop
+coroutine.wrap(function()
+	while true do
+		local currentTime = tick()
+		if currentTime - lastUpdateTime >= updateInterval then
+			lastUpdateTime = currentTime
+
+			-- Call optimizations here
+			cech()
+			preloadChunks()
+			applyLODAndFade()
+		end
+		wait()
+	end
+end)()
